@@ -1,0 +1,24 @@
+{
+  "_comment": "Atlassian MCP Guardrails — Cursor MCP Server Configuration. See docs/CURSOR_SETUP.md for full setup instructions. Fill in the empty string values with your own credentials and scope settings.",
+  "mcpServers": {
+    "atlassian-guardrails": {
+      "command": "python",
+      "args": ["-m", "atlassian_mcp_guardrails.server"],
+      "env": {
+        "JIRA_BASE_URL": "",
+        "JIRA_EMAIL": "",
+        "JIRA_TOKEN": "",
+        "CONFLUENCE_BASE_URL": "",
+        "JIRA_DEFAULT_PROJECTS": "",
+        "CONFLUENCE_DEFAULT_SPACES": "",
+        "JIRA_ALLOWED_PROJECTS": "",
+        "CONFLUENCE_ALLOWED_SPACES": "",
+        "MAX_RESULTS_PER_REQUEST": "50",
+        "MAX_RESULTS_HARD_CAP": "200",
+        "MAX_API_CALLS_PER_REQUEST": "20",
+        "REQUEST_DELAY_MS": "100",
+        "LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}

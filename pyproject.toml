@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "atlassian-mcp-guardrails"
+version = "0.1.0"
+description = "Read-only, rate-limited, scope-guarded MCP server for Jira and Confluence"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+dependencies = [
+    "mcp>=1.0.0",
+    "requests>=2.32.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=5.0.0",
+]
+
+[project.scripts]
+atlassian-mcp-guardrails = "atlassian_mcp_guardrails.server:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["atlassian_mcp_guardrails*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
