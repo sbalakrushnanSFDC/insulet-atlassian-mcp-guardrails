@@ -113,6 +113,18 @@ class AtlassianConfig:
     jira_default_projects: list[str] = field(default_factory=list)
     confluence_default_spaces: list[str] = field(default_factory=list)
 
+    # Priority scope (Phase 1) — project + label/fix-version filter; scope="priority"
+    jira_priority_projects: list[str] = field(default_factory=list)
+    jira_priority_labels: list[str] = field(default_factory=list)
+    jira_priority_fix_versions: list[str] = field(default_factory=list)
+
+    # Expanded scope (Phase 2) — broader label/fix-version set; scope="expanded"
+    jira_expanded_labels: list[str] = field(default_factory=list)
+    jira_expanded_fix_versions: list[str] = field(default_factory=list)
+
+    # Confluence priority spaces — used when scope="priority" in confluence_search
+    confluence_priority_spaces: list[str] = field(default_factory=list)
+
     # Allowlist — hard enforcement; empty list means advisory mode only
     jira_allowed_projects: list[str] = field(default_factory=list)
     confluence_allowed_spaces: list[str] = field(default_factory=list)
@@ -165,6 +177,18 @@ class AtlassianConfig:
         jira_default_projects = _parse_csv_list(os.environ.get("JIRA_DEFAULT_PROJECTS", ""))
         confluence_default_spaces = _parse_csv_list(os.environ.get("CONFLUENCE_DEFAULT_SPACES", ""))
 
+        # Priority scope (Phase 1)
+        jira_priority_projects = _parse_csv_list(os.environ.get("JIRA_PRIORITY_PROJECTS", ""))
+        jira_priority_labels = _parse_csv_list(os.environ.get("JIRA_PRIORITY_LABELS", ""))
+        jira_priority_fix_versions = _parse_csv_list(os.environ.get("JIRA_PRIORITY_FIX_VERSIONS", ""))
+
+        # Expanded scope (Phase 2)
+        jira_expanded_labels = _parse_csv_list(os.environ.get("JIRA_EXPANDED_LABELS", ""))
+        jira_expanded_fix_versions = _parse_csv_list(os.environ.get("JIRA_EXPANDED_FIX_VERSIONS", ""))
+
+        # Confluence priority spaces
+        confluence_priority_spaces = _parse_csv_list(os.environ.get("CONFLUENCE_PRIORITY_SPACES", ""))
+
         # Allowlists
         jira_allowed_projects = _parse_csv_list(os.environ.get("JIRA_ALLOWED_PROJECTS", ""))
         confluence_allowed_spaces = _parse_csv_list(os.environ.get("CONFLUENCE_ALLOWED_SPACES", ""))
@@ -198,6 +222,12 @@ class AtlassianConfig:
             confluence_base_url=confluence_base_url,
             jira_default_projects=jira_default_projects,
             confluence_default_spaces=confluence_default_spaces,
+            jira_priority_projects=jira_priority_projects,
+            jira_priority_labels=jira_priority_labels,
+            jira_priority_fix_versions=jira_priority_fix_versions,
+            jira_expanded_labels=jira_expanded_labels,
+            jira_expanded_fix_versions=jira_expanded_fix_versions,
+            confluence_priority_spaces=confluence_priority_spaces,
             jira_allowed_projects=jira_allowed_projects,
             confluence_allowed_spaces=confluence_allowed_spaces,
             max_results_per_request=max_results_per_request,

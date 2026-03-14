@@ -14,70 +14,113 @@ No `PUT`, `PATCH`, or `DELETE` methods are implemented. There is no sync, no wri
 
 ---
 
-## Three-Layer Scope Model
+## Four-Tier Scope Model
 
 ```
-Layer 1 — Allowlist (hard block)
-         JIRA_ALLOWED_PROJECTS, CONFLUENCE_ALLOWED_SPACES
-         ↓ query rejected if out of scope
+Tier 1 — Priority scope (scope="priority", default)
+         JIRA_PRIORITY_PROJECTS + JIRA_PRIORITY_LABELS / JIRA_PRIORITY_FIX_VERSIONS
+         ↓ project + (labels OR fix versions) prepended if query has no project clause
 
-Layer 2 — Default scope (auto-injection)
-         JIRA_DEFAULT_PROJECTS, CONFLUENCE_DEFAULT_SPACES
+Tier 2 — Expanded scope (scope="expanded")
+         JIRA_PRIORITY_PROJECTS + JIRA_EXPANDED_LABELS / JIRA_EXPANDED_FIX_VERSIONS
+         ↓ same projects, broader label/fix-version set
+
+Tier 3 — Default scope (scope="default")
+         JIRA_DEFAULT_PROJECTS / CONFLUENCE_DEFAULT_SPACES
          ↓ project/space prepended if query has no filter
 
-Layer 3 — Caller override
-         explicit project/space in JQL/CQL, or expand_beyond_defaults=true
-         ↓ injection skipped; allowlist still applies
+Tier 4 — No injection (scope="all")
+         raw JQL/CQL passed through unchanged
+
+Allowlist — hard enforcement (always applied regardless of scope tier)
+         JIRA_ALLOWED_PROJECTS / CONFLUENCE_ALLOWED_SPACES
+         ↓ query rejected if out of scope
 ```
 
-### Layer 1 — Allowlist (Hard Enforcement)
+### Tier 1 — Priority Scope (Phase 1)
 
-Configure `JIRA_ALLOWED_PROJECTS` and/or `CONFLUENCE_ALLOWED_SPACES` in `.env`:
+Configure `JIRA_PRIORITY_PROJECTS`, `JIRA_PRIORITY_LABELS`, and `JIRA_PRIORITY_FIX_VERSIONS` in `.env`:
+
+```
+JIRA_PRIORITY_PROJECTS=NGCRMI,NGONDL,NGASIM,NGPSTE,NGOMCT,NGMC
+JIRA_PRIORITY_LABELS=2026Q2,NGPI4,NGPI3,NextGen,PRJ0717,PodderCentral,Team3
+JIRA_PRIORITY_FIX_VERSIONS=Project Infinity SOW MVP,Project Infinity Persona Release 2
+```
+
+When set and a JQL query has no `project` clause, the server prepends:
+```
+project in ("NGCRMI","NGONDL",...) AND (labels in ("2026Q2","NGPI4",...) OR fixVersion in ("Project Infinity SOW MVP",...)) AND {your_jql}
+```
+
+This is the **default scope** for `jira_search` — it narrows results to NextGen program work before the caller needs to specify anything.
+
+### Tier 2 — Expanded Scope (Phase 2)
+
+Configure `JIRA_EXPANDED_LABELS` and `JIRA_EXPANDED_FIX_VERSIONS`:
+
+```
+JIRA_EXPANDED_LABELS=2026Q2,NGPI4,NGPI3,NGPI2,NextGen,PRJ0717,PodderCentral,Team3,OrgSync,PI2_OS_Sprint3
+JIRA_EXPANDED_FIX_VERSIONS=Project Infinity SOW MVP,Project Infinity Persona Release 1,Project Infinity Persona Release 2
+```
+
+Uses the same `JIRA_PRIORITY_PROJECTS` but with the broader Phase 2 label and fix-version sets. Call with `scope="expanded"`.
+
+### Tier 3 — Default Scope
+
+Configure `JIRA_DEFAULT_PROJECTS` and/or `CONFLUENCE_DEFAULT_SPACES`:
+
+```
+JIRA_DEFAULT_PROJECTS=NGCRMI,NGONDL,NGASIM,NGPSTE,NGOMCT,NGMC
+CONFLUENCE_DEFAULT_SPACES=AJST,AS,CCPROC,DGBG,ESG,MOON,Mule,NASFL,ensre
+```
+
+When set and a query has no project/space clause, the server prepends:
+- Jira: `project in ("NGCRMI",...) AND {your_jql}`
+- Confluence: `space in ("AJST",...) AND {your_cql}`
+
+Call with `scope="default"` to use this tier explicitly.
+
+### Tier 4 — No Injection
+
+Pass `scope="all"` to send the raw JQL/CQL without any prepended filters. The allowlist still applies.
+
+`expand_beyond_defaults=true` is a deprecated alias for `scope="all"` and is kept for backward compatibility.
+
+### Allowlist (Hard Enforcement)
+
+Configure `JIRA_ALLOWED_PROJECTS` and/or `CONFLUENCE_ALLOWED_SPACES`:
 
 ```
 JIRA_ALLOWED_PROJECTS=PROJ1,PROJ2
 CONFLUENCE_ALLOWED_SPACES=SPACE1,DOCS
 ```
 
-When non-empty:
+When non-empty, **regardless of scope tier**:
 - Any JQL query that does not reference at least one allowed project raises `ScopeViolationError`
 - Any CQL query that does not reference at least one allowed space raises `ScopeViolationError`
 - The error message tells the caller which projects/spaces are allowed
 
 When empty (default): advisory mode — no enforcement, any project/space is permitted.
 
-### Layer 2 — Default Scope (Auto-Injection)
+### Caller Override
 
-Configure `JIRA_DEFAULT_PROJECTS` and/or `CONFLUENCE_DEFAULT_SPACES`:
+If the caller includes an explicit `project` or `space` clause in their JQL/CQL, no scope injection occurs regardless of the `scope` parameter. The allowlist still applies.
 
 ```
-JIRA_DEFAULT_PROJECTS=PROJ1,PROJ2
-CONFLUENCE_DEFAULT_SPACES=SPACE1,DOCS
+# Injection skipped — explicit project clause present
+jira_search(jql="project = MYPROJ AND issuetype = Story")
 ```
 
-When set and a query has no project/space clause, the server automatically prepends:
-- Jira: `project in ("PROJ1","PROJ2") AND {your_jql}`
-- Confluence: `space in ("SPACE1","DOCS") AND {your_cql}`
+---
 
-This is logged at DEBUG level: `Injecting default project scope: project in ("PROJ1","PROJ2")`
+## Scope Tier Summary
 
-The executed query is always returned in the response (`jql_executed` / `cql_executed`) so callers can see what was sent to the API.
-
-### Layer 3 — Caller Override
-
-Two ways to skip injection:
-
-1. **Include a project/space clause in your query** — injection is skipped automatically when the clause is detected:
-   ```
-   jira_search(jql="project = MYPROJ AND issuetype = Story")
-   ```
-
-2. **Pass `expand_beyond_defaults=true`** — injection is skipped; allowlist still applies:
-   ```
-   jira_search(jql="issuetype = Story", expand_beyond_defaults=true)
-   ```
-
-Note: if `JIRA_ALLOWED_PROJECTS` is set and you use `expand_beyond_defaults=true` without a project clause, the query will be rejected by the allowlist.
+| `scope` | Jira filter applied | Confluence filter applied |
+|---|---|---|
+| `"priority"` *(default)* | `project in (PRIORITY_PROJECTS) AND (labels in (PRIORITY_LABELS) OR fixVersion in (PRIORITY_FIX_VERSIONS))` | `space in (CONFLUENCE_PRIORITY_SPACES)` — falls back to default if not set |
+| `"expanded"` | `project in (PRIORITY_PROJECTS) AND (labels in (EXPANDED_LABELS) OR fixVersion in (EXPANDED_FIX_VERSIONS))` | same as priority |
+| `"default"` | `project in (JIRA_DEFAULT_PROJECTS)` | `space in (CONFLUENCE_DEFAULT_SPACES)` |
+| `"all"` | no injection | no injection |
 
 ---
 

@@ -6,22 +6,121 @@ For administrators setting up this server for a team, managing allowlists, and t
 
 ## Full Environment Variable Reference
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `JIRA_BASE_URL` | Yes | — | Atlassian Cloud base URL (e.g. `https://company.atlassian.net`) |
-| `JIRA_EMAIL` | Yes | — | Email address for the Atlassian account |
-| `JIRA_TOKEN` | Yes | — | Atlassian API token (not password) |
-| `CONFLUENCE_BASE_URL` | No | `JIRA_BASE_URL` | Confluence base URL; defaults to Jira URL for Cloud |
-| `JIRA_DEFAULT_PROJECTS` | No | `""` | Comma-separated project keys; auto-injected when query has no project clause |
-| `CONFLUENCE_DEFAULT_SPACES` | No | `""` | Comma-separated space keys; auto-injected when query has no space clause |
-| `JIRA_ALLOWED_PROJECTS` | No | `""` | Comma-separated allowlist; queries outside this scope are rejected |
-| `CONFLUENCE_ALLOWED_SPACES` | No | `""` | Comma-separated allowlist; queries outside this scope are rejected |
-| `MAX_RESULTS_PER_REQUEST` | No | `50` | Default result count per search call |
-| `MAX_RESULTS_HARD_CAP` | No | `200` | Absolute maximum results; caller cannot exceed this |
-| `MAX_API_CALLS_PER_REQUEST` | No | `20` | Max Atlassian API calls per single tool invocation |
-| `REQUEST_DELAY_MS` | No | `100` | Minimum ms between API calls within one tool invocation |
-| `HTTP_TIMEOUT` | No | `30` | HTTP request timeout in seconds |
-| `LOG_LEVEL` | No | `INFO` | One of: `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+### Required
+
+| Variable | Description |
+|---|---|
+| `JIRA_BASE_URL` | Atlassian Cloud base URL (e.g. `https://company.atlassian.net`) |
+| `JIRA_EMAIL` | Email address for the Atlassian account |
+| `JIRA_TOKEN` | Atlassian API token (not password) |
+
+### Optional — URLs
+
+| Variable | Default | Description |
+|---|---|---|
+| `CONFLUENCE_BASE_URL` | `JIRA_BASE_URL` | Confluence base URL; defaults to Jira URL for Cloud |
+
+### Optional — Default Scope (Tier 3)
+
+| Variable | Default | Description |
+|---|---|---|
+| `JIRA_DEFAULT_PROJECTS` | `""` | Comma-separated project keys; injected when `scope="default"` and query has no project clause |
+| `CONFLUENCE_DEFAULT_SPACES` | `""` | Comma-separated space keys; injected when `scope="default"` and query has no space clause |
+
+### Optional — Priority Scope (Tier 1 — Phase 1)
+
+| Variable | Default | Description |
+|---|---|---|
+| `JIRA_PRIORITY_PROJECTS` | `""` | Comma-separated project keys for Phase 1 priority scope |
+| `JIRA_PRIORITY_LABELS` | `""` | Comma-separated label values; combined with fix versions in Phase 1 JQL |
+| `JIRA_PRIORITY_FIX_VERSIONS` | `""` | Comma-separated fix version names for Phase 1 JQL |
+
+### Optional — Expanded Scope (Tier 2 — Phase 2)
+
+| Variable | Default | Description |
+|---|---|---|
+| `JIRA_EXPANDED_LABELS` | `""` | Broader label set for Phase 2; uses same projects as `JIRA_PRIORITY_PROJECTS` |
+| `JIRA_EXPANDED_FIX_VERSIONS` | `""` | Broader fix-version set for Phase 2 |
+
+### Optional — Confluence Priority Scope
+
+| Variable | Default | Description |
+|---|---|---|
+| `CONFLUENCE_PRIORITY_SPACES` | `""` | Comma-separated space keys; injected when `scope="priority"` (falls back to default if empty) |
+
+### Optional — Allowlist (Hard Enforcement)
+
+| Variable | Default | Description |
+|---|---|---|
+| `JIRA_ALLOWED_PROJECTS` | `""` | Comma-separated allowlist; queries outside this scope are rejected |
+| `CONFLUENCE_ALLOWED_SPACES` | `""` | Comma-separated allowlist; queries outside this scope are rejected |
+
+### Optional — Rate Limiting and Result Caps
+
+| Variable | Default | Description |
+|---|---|---|
+| `MAX_RESULTS_PER_REQUEST` | `50` | Default result count per search call |
+| `MAX_RESULTS_HARD_CAP` | `200` | Absolute maximum results; caller cannot exceed this |
+| `MAX_API_CALLS_PER_REQUEST` | `20` | Max Atlassian API calls per single tool invocation |
+| `REQUEST_DELAY_MS` | `100` | Minimum ms between API calls within one tool invocation |
+| `HTTP_TIMEOUT` | `30` | HTTP request timeout in seconds |
+| `LOG_LEVEL` | `INFO` | One of: `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+
+---
+
+## Insulet-Specific Configuration
+
+The `.env.example` is pre-populated with Insulet defaults. Key values:
+
+```
+JIRA_BASE_URL=https://insulet.atlassian.net
+CONFLUENCE_BASE_URL=https://insulet.atlassian.net/wiki
+
+# All 6 NextGen projects
+JIRA_DEFAULT_PROJECTS=NGCRMI,NGONDL,NGASIM,NGPSTE,NGOMCT,NGMC
+
+# Phase 1 priority — NextGen program work
+JIRA_PRIORITY_PROJECTS=NGCRMI,NGONDL,NGASIM,NGPSTE,NGOMCT,NGMC
+JIRA_PRIORITY_LABELS=2026Q2,NGPI4,NGPI3,NextGen,PRJ0717,PodderCentral,Team3
+JIRA_PRIORITY_FIX_VERSIONS=Project Infinity SOW MVP,Project Infinity Persona Release 2
+
+# Phase 2 expanded
+JIRA_EXPANDED_LABELS=2026Q2,NGPI4,NGPI3,NGPI2,NextGen,PRJ0717,PodderCentral,Team3,OrgSync,PI2_OS_Sprint3
+JIRA_EXPANDED_FIX_VERSIONS=Project Infinity SOW MVP,Project Infinity Persona Release 1,Project Infinity Persona Release 2
+```
+
+Confluence spaces are resolved from `https://confluence.prod.insulet.com/wiki/spaces` (Your spaces):
+
+```
+CONFLUENCE_DEFAULT_SPACES=AJST,AS,CCPROC,DGBG,ESG,MOON,Mule,NASFL,ensre
+```
+
+| Space key | Display name |
+|---|---|
+| AJST | iOS Platform ART |
+| AS | Atlassian Support |
+| CCPROC | CC_International_Change Enablement |
+| DGBG | DGB Gibraltar |
+| ESG | Electronic Systems |
+| MOON | Moonshot |
+| Mule | MuleSoft Integrations |
+| NASFL | NextGen CRM (U.S.) |
+| ensre | Enterprise-SRE |
+
+---
+
+## Scope Tier Behaviour
+
+The `scope` parameter on `jira_search` and `confluence_search` controls which filter is prepended when the query has no explicit project/space clause:
+
+| `scope` | Jira filter | Confluence filter |
+|---|---|---|
+| `"priority"` *(default)* | `project in (PRIORITY_PROJECTS) AND (labels OR fixVersion)` | `space in (PRIORITY_SPACES)` → falls back to default |
+| `"expanded"` | `project in (PRIORITY_PROJECTS) AND (expanded labels OR fixVersion)` | same as priority |
+| `"default"` | `project in (DEFAULT_PROJECTS)` | `space in (DEFAULT_SPACES)` |
+| `"all"` | no injection | no injection |
+
+The allowlist (`JIRA_ALLOWED_PROJECTS` / `CONFLUENCE_ALLOWED_SPACES`) is always enforced regardless of scope tier.
 
 ---
 
@@ -68,6 +167,10 @@ JIRA_DEFAULT_PROJECTS=PROJ1,PROJ2
 CONFLUENCE_DEFAULT_SPACES=SPACE1,DOCS
 JIRA_ALLOWED_PROJECTS=PROJ1,PROJ2
 CONFLUENCE_ALLOWED_SPACES=SPACE1,DOCS
+
+JIRA_PRIORITY_PROJECTS=PROJ1,PROJ2
+JIRA_PRIORITY_LABELS=label1,label2
+JIRA_PRIORITY_FIX_VERSIONS=v1.0,v2.0
 
 MAX_RESULTS_PER_REQUEST=50
 MAX_RESULTS_HARD_CAP=200
@@ -143,7 +246,7 @@ JIRA_BASE_URL=https://company.atlassian.net
 
 | Level | When it appears |
 |---|---|
-| `DEBUG` | Scope injection details, field discovery mappings, canonical URL resolution |
+| `DEBUG` | Scope injection details (tier applied, filter prepended), field discovery mappings, canonical URL resolution |
 | `INFO` | Canonical URL changes, field discovery summary |
 | `WARNING` | Rate limit retries, result cap enforcement, server errors, resolution failures |
 | `ERROR` | Tool invocation failures, API errors |
@@ -151,20 +254,19 @@ JIRA_BASE_URL=https://company.atlassian.net
 To see scope injection in action, set `LOG_LEVEL=DEBUG` and run a search without a project clause. You will see:
 
 ```
-DEBUG atlassian_mcp_guardrails.guardrails: Injecting default project scope: project in ("PROJ1","PROJ2")
+DEBUG atlassian_mcp_guardrails.guardrails: Injecting priority (Phase 1) scope: project in ("NGCRMI",...) AND (labels in (...) OR fixVersion in (...))
 ```
 
 ---
 
 ## Identifying Auto-Scoped Queries
 
-Every tool response includes `jql_executed` or `cql_executed` showing the exact query sent to the API:
+Every tool response includes `jql_executed` / `cql_executed` and `scope_applied` showing the exact query sent to the API and which tier was used:
 
 ```json
 {
-  "jql_executed": "project in (\"PROJ1\",\"PROJ2\") AND issuetype = Story",
+  "scope_applied": "priority",
+  "jql_executed": "project in (\"NGCRMI\",\"NGASIM\") AND (labels in (\"NextGen\") OR fixVersion in (\"...\")) AND issuetype = Story",
   ...
 }
 ```
-
-If the executed query starts with `project in (...)` or `space in (...)` and the caller did not include that clause, the default scope was injected.

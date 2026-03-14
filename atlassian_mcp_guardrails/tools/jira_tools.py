@@ -11,6 +11,8 @@ from atlassian_mcp_guardrails.guardrails import (
     enforce_project_scope,
     enforce_result_cap,
     inject_default_project_scope,
+    inject_expanded_jql,
+    inject_priority_jql,
 )
 from atlassian_mcp_guardrails.jira.client import JiraClient
 from atlassian_mcp_guardrails.jira.field_discovery import discover_custom_fields
@@ -59,24 +61,38 @@ def _issue_to_dict(issue: JiraIssue) -> dict:
 def jira_search(
     jql: str,
     max_results: int = 50,
+    scope: str = "priority",
     expand_beyond_defaults: bool = False,
 ) -> dict:
     """Search Jira issues using JQL.
 
-    If ``JIRA_DEFAULT_PROJECTS`` is configured and the JQL has no project
-    clause, the default projects are automatically prepended. Pass
-    ``expand_beyond_defaults=True`` to skip this injection.
+    The ``scope`` parameter controls which filter is prepended when the JQL has
+    no explicit project clause:
+
+    - ``"priority"`` *(default)* — Phase 1: ``JIRA_PRIORITY_PROJECTS`` AND
+      (``JIRA_PRIORITY_LABELS`` OR ``JIRA_PRIORITY_FIX_VERSIONS``). Narrows to
+      NextGen program work first.
+    - ``"expanded"`` — Phase 2: same projects with broader label/fix-version sets
+      from ``JIRA_EXPANDED_LABELS`` / ``JIRA_EXPANDED_FIX_VERSIONS``.
+    - ``"default"`` — project-only filter from ``JIRA_DEFAULT_PROJECTS``
+      (original behaviour).
+    - ``"all"`` — no injection; raw JQL is sent as-is.
 
     If ``JIRA_ALLOWED_PROJECTS`` is configured, the query must reference at
-    least one allowed project or a ``ScopeViolationError`` is returned.
+    least one allowed project or a ``ScopeViolationError`` is returned regardless
+    of scope.
+
+    ``expand_beyond_defaults=True`` is a deprecated alias for ``scope="all"``.
 
     Args:
         jql: JQL query string (e.g. ``issuetype = Story AND status = 'In Progress'``).
         max_results: Number of results to return (default 50; hard cap from config).
-        expand_beyond_defaults: If True, skip default project scope injection.
+        scope: Scope tier to apply — ``"priority"``, ``"expanded"``, ``"default"``,
+            or ``"all"``. Defaults to ``"priority"``.
+        expand_beyond_defaults: Deprecated. If True, overrides scope to ``"all"``.
 
     Returns:
-        Dict with ``issues`` list and ``meta`` context.
+        Dict with ``issues`` list, ``scope_applied``, ``jql_executed``, and ``meta``.
     """
     try:
         config = AtlassianConfig.from_env()
@@ -84,9 +100,27 @@ def jira_search(
 
         effective_max = enforce_result_cap(max_results, config.max_results_hard_cap)
 
+        # Deprecated flag takes precedence for backward compatibility
+        effective_scope = "all" if expand_beyond_defaults else scope
+
         effective_jql = jql
-        if not expand_beyond_defaults:
+        if effective_scope == "priority":
+            effective_jql = inject_priority_jql(
+                jql,
+                config.jira_priority_projects,
+                config.jira_priority_labels,
+                config.jira_priority_fix_versions,
+            )
+        elif effective_scope == "expanded":
+            effective_jql = inject_expanded_jql(
+                jql,
+                config.jira_priority_projects,
+                config.jira_expanded_labels,
+                config.jira_expanded_fix_versions,
+            )
+        elif effective_scope == "default":
             effective_jql = inject_default_project_scope(jql, config.jira_default_projects)
+        # scope="all" → no injection
 
         enforce_project_scope(effective_jql, config.jira_allowed_projects)
 
@@ -96,6 +130,7 @@ def jira_search(
         return {
             "issues": [_issue_to_dict(i) for i in issues],
             "count": len(issues),
+            "scope_applied": effective_scope,
             "jql_executed": effective_jql,
             "meta": ctx.to_dict(),
         }

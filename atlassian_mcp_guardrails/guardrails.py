@@ -3,25 +3,29 @@
 This module provides:
 - Custom exception types for guardrail violations
 - Scope allowlist enforcement (hard block for out-of-scope queries)
-- Default scope injection (auto-prepend project/space filters)
+- Priority, expanded, and default scope injection (auto-prepend project/space/label filters)
 - Result cap enforcement (prevent unbounded result sets)
 
-Three-layer scope model
------------------------
-Layer 1 — Allowlist (hard enforcement):
+Four-tier scope model (controlled by the ``scope`` parameter on search tools)
+------------------------------------------------------------------------------
+Tier 1 — Priority scope (``scope="priority"``, default):
+    ``JIRA_PRIORITY_PROJECTS`` + ``JIRA_PRIORITY_LABELS`` / ``JIRA_PRIORITY_FIX_VERSIONS``
+    Narrows to NextGen program work: project filter AND (labels OR fix versions).
+
+Tier 2 — Expanded scope (``scope="expanded"``):
+    Same projects with broader label/fix-version sets from Phase 2.
+
+Tier 3 — Default scope (``scope="default"``):
+    ``JIRA_DEFAULT_PROJECTS`` / ``CONFLUENCE_DEFAULT_SPACES``
+    Project-only filter; same as the original behaviour.
+
+Tier 4 — No injection (``scope="all"``):
+    Raw JQL/CQL passed through unchanged.
+
+Layer — Allowlist (hard enforcement, always applied):
     ``JIRA_ALLOWED_PROJECTS`` / ``CONFLUENCE_ALLOWED_SPACES``
     If non-empty, any query that does not reference an allowed project/space
     raises ``ScopeViolationError``.
-
-Layer 2 — Default scope (auto-injection):
-    ``JIRA_DEFAULT_PROJECTS`` / ``CONFLUENCE_DEFAULT_SPACES``
-    If the query has no project/space clause, the defaults are prepended
-    automatically. The caller can pass ``expand_beyond_defaults=True`` to
-    skip injection (allowlist still applies).
-
-Layer 3 — Caller override:
-    Caller supplies an explicit project/space clause in JQL/CQL → injection
-    is skipped. Allowlist still applies.
 """
 
 from __future__ import annotations
@@ -207,6 +211,115 @@ def inject_default_space_scope(cql: str, defaults: list[str]) -> str:
     space_csv = ", ".join(f'"{s}"' for s in defaults)
     scoped = f"space in ({space_csv}) AND {cql}"
     logger.debug("Injecting default space scope: space in (%s)", space_csv)
+    return scoped
+
+
+# ---------------------------------------------------------------------------
+# Priority scope injection (Phase 1 and Phase 2)
+# ---------------------------------------------------------------------------
+
+
+def _build_label_fixversion_clause(labels: list[str], fix_versions: list[str]) -> str | None:
+    """Build a JQL clause combining labels and fix versions with OR."""
+    if labels and fix_versions:
+        l_csv = ", ".join(f'"{l}"' for l in labels)
+        fv_csv = ", ".join(f'"{v}"' for v in fix_versions)
+        return f'(labels in ({l_csv}) OR fixVersion in ({fv_csv}))'
+    if labels:
+        l_csv = ", ".join(f'"{l}"' for l in labels)
+        return f"labels in ({l_csv})"
+    if fix_versions:
+        fv_csv = ", ".join(f'"{v}"' for v in fix_versions)
+        return f"fixVersion in ({fv_csv})"
+    return None
+
+
+def inject_priority_jql(
+    jql: str,
+    priority_projects: list[str],
+    labels: list[str],
+    fix_versions: list[str],
+) -> str:
+    """Prepend Phase 1 priority scope: project + (labels OR fix_versions).
+
+    Skipped if ``priority_projects`` is empty or the JQL already has a project clause.
+
+    Args:
+        jql: The caller-supplied JQL query.
+        priority_projects: Project keys from ``JIRA_PRIORITY_PROJECTS``.
+        labels: Label values from ``JIRA_PRIORITY_LABELS``.
+        fix_versions: Fix version names from ``JIRA_PRIORITY_FIX_VERSIONS``.
+
+    Returns:
+        The (possibly modified) JQL string.
+    """
+    if not priority_projects or _has_project_clause(jql):
+        return jql
+
+    proj_csv = ", ".join(f'"{p}"' for p in priority_projects)
+    clauses = [f"project in ({proj_csv})"]
+
+    label_fv_clause = _build_label_fixversion_clause(labels, fix_versions)
+    if label_fv_clause:
+        clauses.append(label_fv_clause)
+
+    scoped = " AND ".join(clauses) + f" AND {jql}"
+    logger.debug("Injecting priority (Phase 1) scope: %s", " AND ".join(clauses))
+    return scoped
+
+
+def inject_expanded_jql(
+    jql: str,
+    priority_projects: list[str],
+    expanded_labels: list[str],
+    expanded_fix_versions: list[str],
+) -> str:
+    """Prepend Phase 2 expanded scope: same projects, broader label/fix-version set.
+
+    Skipped if ``priority_projects`` is empty or the JQL already has a project clause.
+
+    Args:
+        jql: The caller-supplied JQL query.
+        priority_projects: Project keys from ``JIRA_PRIORITY_PROJECTS``.
+        expanded_labels: Broader label values from ``JIRA_EXPANDED_LABELS``.
+        expanded_fix_versions: Broader fix versions from ``JIRA_EXPANDED_FIX_VERSIONS``.
+
+    Returns:
+        The (possibly modified) JQL string.
+    """
+    if not priority_projects or _has_project_clause(jql):
+        return jql
+
+    proj_csv = ", ".join(f'"{p}"' for p in priority_projects)
+    clauses = [f"project in ({proj_csv})"]
+
+    label_fv_clause = _build_label_fixversion_clause(expanded_labels, expanded_fix_versions)
+    if label_fv_clause:
+        clauses.append(label_fv_clause)
+
+    scoped = " AND ".join(clauses) + f" AND {jql}"
+    logger.debug("Injecting expanded (Phase 2) scope: %s", " AND ".join(clauses))
+    return scoped
+
+
+def inject_priority_space_scope(cql: str, priority_spaces: list[str]) -> str:
+    """Prepend a priority space filter to CQL if no space clause is present.
+
+    Skipped if ``priority_spaces`` is empty or the CQL already has a space clause.
+
+    Args:
+        cql: The caller-supplied CQL query.
+        priority_spaces: Space keys from ``CONFLUENCE_PRIORITY_SPACES``.
+
+    Returns:
+        The (possibly modified) CQL string.
+    """
+    if not priority_spaces or _has_space_clause(cql):
+        return cql
+
+    space_csv = ", ".join(f'"{s}"' for s in priority_spaces)
+    scoped = f"space in ({space_csv}) AND {cql}"
+    logger.debug("Injecting priority space scope: space in (%s)", space_csv)
     return scoped
 
 

@@ -70,7 +70,7 @@ class TestJiraSearchTool:
         with patch("atlassian_mcp_guardrails.tools.jira_tools.AtlassianConfig.from_env", return_value=scoped_config):
             with patch("atlassian_mcp_guardrails.tools.jira_tools.JiraClient.from_config", return_value=mock_client):
                 from atlassian_mcp_guardrails.tools.jira_tools import jira_search
-                result = jira_search("issuetype = Story")
+                result = jira_search("issuetype = Story", scope="default")
 
         # The executed JQL should have the default projects injected
         assert "PROJ1" in result["jql_executed"] or "PROJ2" in result["jql_executed"]

@@ -14,30 +14,44 @@ Search Jira issues using JQL.
 |---|---|---|---|
 | `jql` | string | required | JQL query string |
 | `max_results` | integer | 50 | Results to return; capped at `MAX_RESULTS_HARD_CAP` |
-| `expand_beyond_defaults` | boolean | false | Skip default project scope injection |
+| `scope` | string | `"priority"` | Scope tier to apply — see below |
+| `expand_beyond_defaults` | boolean | false | Deprecated alias for `scope="all"` |
 
-**Scope behavior:**
-- If `JIRA_DEFAULT_PROJECTS` is set and the JQL has no `project` clause, the defaults are prepended automatically.
-- If `JIRA_ALLOWED_PROJECTS` is set, the query must reference an allowed project or it is rejected.
-- Pass `expand_beyond_defaults=true` to skip injection (allowlist still applies).
+**Scope tiers:**
+
+The `scope` parameter controls which filter is automatically prepended when the JQL has no explicit `project` clause:
+
+| `scope` | JQL injected | When to use |
+|---|---|---|
+| `"priority"` *(default)* | `project in (JIRA_PRIORITY_PROJECTS) AND (labels in (JIRA_PRIORITY_LABELS) OR fixVersion in (JIRA_PRIORITY_FIX_VERSIONS))` | Narrow to program work first |
+| `"expanded"` | `project in (JIRA_PRIORITY_PROJECTS) AND (labels in (JIRA_EXPANDED_LABELS) OR fixVersion in (JIRA_EXPANDED_FIX_VERSIONS))` | Broader label/fix-version set |
+| `"default"` | `project in (JIRA_DEFAULT_PROJECTS)` | Project-only filter |
+| `"all"` | No injection — raw JQL sent as-is | Cross-project queries |
+
+If the JQL already contains a `project` clause, no injection occurs regardless of `scope`.
+
+If `JIRA_ALLOWED_PROJECTS` is set, the final query must reference an allowed project or it is rejected with a `ScopeViolationError` (applies to all scope tiers).
 
 **Example calls:**
 
 ```
-# Uses default project scope if configured
+# Default: priority scope — NextGen program work first
 jira_search(jql="issuetype = Story AND status = 'In Progress'")
 
-# Explicit project overrides default injection
-jira_search(jql="project = MYPROJ AND issuetype = Bug AND priority = High")
+# Expanded scope — broader Phase 2 label/fix-version set
+jira_search(jql="issuetype = Story", scope="expanded")
 
-# Search across all projects (requires empty allowlist)
-jira_search(jql="issuetype = Story", expand_beyond_defaults=true)
+# Default scope — project-only filter
+jira_search(jql="issuetype = Bug AND priority = High", scope="default")
+
+# Explicit project — injection skipped regardless of scope
+jira_search(jql="project = MYPROJ AND issuetype = Bug")
+
+# All projects (requires empty allowlist)
+jira_search(jql="issuetype = Story", scope="all")
 
 # Filter by label
-jira_search(jql="labels = 'my-label' AND status != Done")
-
-# Filter by fix version
-jira_search(jql="fixVersion = 'v2.0' AND issuetype in (Story, Feature)")
+jira_search(jql="labels = 'my-label' AND status != Done", scope="all")
 ```
 
 **Response shape:**
@@ -63,7 +77,8 @@ jira_search(jql="fixVersion = 'v2.0' AND issuetype in (Story, Feature)")
     }
   ],
   "count": 1,
-  "jql_executed": "project in (\"PROJ\") AND issuetype = Story AND status = 'In Progress'",
+  "scope_applied": "priority",
+  "jql_executed": "project in (\"PROJ\") AND (labels in (\"NextGen\") OR fixVersion in (\"...\")) AND issuetype = Story",
   "meta": { "request_id": "...", "elapsed_ms": 342, "api_calls_made": 2 }
 }
 ```
@@ -187,26 +202,36 @@ Search Confluence pages using CQL.
 | `cql` | string | required | CQL query string |
 | `limit` | integer | 25 | Results to return; capped at `MAX_RESULTS_HARD_CAP` |
 | `include_body` | boolean | false | Include truncated body text in results |
-| `expand_beyond_defaults` | boolean | false | Skip default space scope injection |
+| `scope` | string | `"priority"` | Scope tier to apply — see below |
+| `expand_beyond_defaults` | boolean | false | Deprecated alias for `scope="all"` |
 
-**Scope behavior:**
-- If `CONFLUENCE_DEFAULT_SPACES` is set and the CQL has no `space` clause, the defaults are prepended automatically.
-- If `CONFLUENCE_ALLOWED_SPACES` is set, the query must reference an allowed space.
+**Scope tiers:**
+
+| `scope` | CQL injected | When to use |
+|---|---|---|
+| `"priority"` *(default)* | `space in (CONFLUENCE_PRIORITY_SPACES)` | Your most relevant spaces first; falls back to `default` if `CONFLUENCE_PRIORITY_SPACES` is not set |
+| `"default"` | `space in (CONFLUENCE_DEFAULT_SPACES)` | All configured default spaces |
+| `"all"` | No injection — raw CQL sent as-is | Cross-space queries |
+
+If the CQL already contains a `space` clause, no injection occurs regardless of `scope`.
 
 **Example calls:**
 
 ```
-# Uses default space scope if configured
+# Default: priority spaces
 confluence_search(cql="text ~ 'authentication' AND type = page")
 
-# Explicit space overrides injection
+# All default spaces
+confluence_search(cql="text ~ 'onboarding' AND type = page", scope="default")
+
+# Explicit space — injection skipped
 confluence_search(cql="space = MYSPACE AND text ~ 'onboarding'")
 
 # Search with body content included
 confluence_search(cql="label = 'release-notes'", include_body=true)
 
-# Recent pages
-confluence_search(cql="type = page ORDER BY lastModified DESC", limit=10)
+# Recent pages across all spaces
+confluence_search(cql="type = page ORDER BY lastModified DESC", limit=10, scope="all")
 ```
 
 **Response shape:**
@@ -227,6 +252,7 @@ confluence_search(cql="type = page ORDER BY lastModified DESC", limit=10)
     }
   ],
   "count": 1,
+  "scope_applied": "priority",
   "cql_executed": "space in (\"MYSPACE\") AND text ~ 'authentication' AND type = page",
   "meta": { ... }
 }
