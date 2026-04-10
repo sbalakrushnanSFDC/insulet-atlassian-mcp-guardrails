@@ -52,16 +52,33 @@ class TestJiraSearchTool:
         assert len(result["issues"]) == 1
         assert result["issues"][0]["key"] == "PROJ-1"
 
-    def test_description_truncated_to_500(self, base_config):
+    def test_description_unlimited_by_default(self, base_config):
+        """description_max_chars=0 (default) means no truncation."""
         mock_client = MagicMock()
         mock_client.search.return_value = [_make_issue()]
 
+        # base_config has description_max_chars=0 (unlimited) by default
         with patch("atlassian_mcp_guardrails.tools.jira_tools.AtlassianConfig.from_env", return_value=base_config):
             with patch("atlassian_mcp_guardrails.tools.jira_tools.JiraClient.from_config", return_value=mock_client):
                 from atlassian_mcp_guardrails.tools.jira_tools import jira_search
                 result = jira_search("issuetype = Story")
 
-        assert len(result["issues"][0]["description_plain"]) <= 500
+        # The issue has a 600-char description — should NOT be truncated by default
+        assert len(result["issues"][0]["description_plain"]) == 600
+
+    def test_description_truncated_when_cap_set(self, base_config):
+        """description_max_chars > 0 truncates to that length."""
+        import dataclasses
+        capped_config = dataclasses.replace(base_config, description_max_chars=100)
+        mock_client = MagicMock()
+        mock_client.search.return_value = [_make_issue()]
+
+        with patch("atlassian_mcp_guardrails.tools.jira_tools.AtlassianConfig.from_env", return_value=capped_config):
+            with patch("atlassian_mcp_guardrails.tools.jira_tools.JiraClient.from_config", return_value=mock_client):
+                from atlassian_mcp_guardrails.tools.jira_tools import jira_search
+                result = jira_search("issuetype = Story")
+
+        assert len(result["issues"][0]["description_plain"]) <= 100
 
     def test_default_scope_injected(self, scoped_config):
         mock_client = MagicMock()

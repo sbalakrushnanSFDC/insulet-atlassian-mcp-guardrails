@@ -136,6 +136,10 @@ class AtlassianConfig:
     request_delay_ms: int = 100
     http_timeout: int = 30
 
+    # Text field caps — 0 means unlimited
+    description_max_chars: int = 0
+    ac_max_chars: int = 0
+
     # Logging
     log_level: str = "INFO"
 
@@ -209,6 +213,8 @@ class AtlassianConfig:
         max_api_calls_per_request = _int("MAX_API_CALLS_PER_REQUEST", 20)
         request_delay_ms = _int("REQUEST_DELAY_MS", 100)
         http_timeout = _int("HTTP_TIMEOUT", 30)
+        description_max_chars = _int("DESCRIPTION_MAX_CHARS", 0)
+        ac_max_chars = _int("AC_MAX_CHARS", 0)
 
         log_level = os.environ.get("LOG_LEVEL", "INFO").strip().upper()
         if log_level not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
@@ -235,5 +241,7 @@ class AtlassianConfig:
             max_api_calls_per_request=max_api_calls_per_request,
             request_delay_ms=request_delay_ms,
             http_timeout=http_timeout,
+            description_max_chars=description_max_chars,
+            ac_max_chars=ac_max_chars,
             log_level=log_level,
         )

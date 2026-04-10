@@ -21,7 +21,8 @@ cp .env.example .env
 # Edit .env — fill in JIRA_BASE_URL, JIRA_EMAIL, JIRA_TOKEN
 
 # 4. Verify connectivity
-python -m atlassian_mcp_guardrails.server &
+atlassian-mcp-guardrails &
+# Or: python -m atlassian_mcp_guardrails
 # Then call atlassian_health_check from your MCP client
 
 # 5. Add to Cursor AI (see docs/CURSOR_SETUP.md)

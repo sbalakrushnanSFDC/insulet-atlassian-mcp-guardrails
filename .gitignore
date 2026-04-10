@@ -1,43 +1,22 @@
-# Environment — never commit credentials
+# Real credentials — NEVER commit
 .env
-.env.local
-.env.*.local
 
-# Python
+# Python virtual environment
+.venv/
+
+# Python bytecode
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
-*.egg
+**/__pycache__/
+*.pyc
+*.pyo
+
+# Test cache
+.pytest_cache/
+
+# Build artifacts
 *.egg-info/
 dist/
 build/
-.eggs/
-*.whl
-
-# Virtual environments
-.venv/
-venv/
-env/
-ENV/
-
-# IDE
-.cursor/
-.vscode/
-.idea/
-*.swp
-*.swo
 
 # macOS
 .DS_Store
-.AppleDouble
-.LSOverride
-
-# Testing / coverage
-.pytest_cache/
-.coverage
-htmlcov/
-coverage.xml
-
-# Logs
-*.log

@@ -100,8 +100,8 @@ There are three ways to add this server to Cursor. Choose the one that fits your
 ```json
 {
   "atlassian-guardrails": {
-    "command": "/full/path/to/.venv/bin/python",
-    "args": ["-m", "atlassian_mcp_guardrails.server"],
+    "command": "/full/path/to/insulet-atlassian-mcp-guardrails/.venv/bin/atlassian-mcp-guardrails",
+    "args": [],
     "cwd": "/full/path/to/insulet-atlassian-mcp-guardrails",
     "env": {
       "JIRA_BASE_URL": "https://your-instance.atlassian.net",
@@ -125,14 +125,16 @@ Create `.cursor/mcp.json` in your project repo (the repo you work in, not this o
 {
   "mcpServers": {
     "atlassian-guardrails": {
-      "command": "/full/path/to/.venv/bin/python",
-      "args": ["-m", "atlassian_mcp_guardrails.server"],
+      "command": "/full/path/to/insulet-atlassian-mcp-guardrails/.venv/bin/atlassian-mcp-guardrails",
+      "args": [],
       "cwd": "/full/path/to/insulet-atlassian-mcp-guardrails",
       "envFile": "/full/path/to/insulet-atlassian-mcp-guardrails/.env"
     }
   }
 }
 ```
+
+**Important:** Use the `atlassian-mcp-guardrails` CLI entry point (or `python -m atlassian_mcp_guardrails`), **not** `python -m atlassian_mcp_guardrails.server`. The latter causes a duplicate module load and results in "No tools, prompts, or resources" in Cursor.
 
 This lets the whole team share the same MCP config by committing `.cursor/mcp.json` to your project repo. Each developer keeps their own `.env` with their personal credentials.
 
@@ -200,5 +202,6 @@ Show me the Jira issue PROJ-456 with full details
 | `CONFLUENCE_BASE_URL` set to the proxy URL | Set it to the canonical `*.atlassian.net` URL, or leave it unset (defaults to `JIRA_BASE_URL`) |
 | Python path points to system Python, not the venv | Use the full path: `/path/to/.venv/bin/python` |
 | Server not appearing in Cursor | Restart Cursor; check the MCP logs in Cursor settings |
+| "No tools, prompts, or resources" (green dot but empty) | Use `atlassian-mcp-guardrails` CLI or `python -m atlassian_mcp_guardrails`, not `python -m atlassian_mcp_guardrails.server` |
 
 See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for more detailed diagnosis.

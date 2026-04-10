@@ -23,7 +23,7 @@ import requests
 from atlassian_mcp_guardrails.auth import create_session, resolve_canonical_url
 from atlassian_mcp_guardrails.config import AtlassianConfig
 from atlassian_mcp_guardrails.context import RequestContext
-from atlassian_mcp_guardrails.jira.models import JiraIssue
+from atlassian_mcp_guardrails.jira.models import JiraAttachment, JiraComment, JiraIssue, JiraRemoteLink
 
 logger = logging.getLogger(__name__)
 
@@ -211,6 +211,166 @@ class JiraClient:
         resp.raise_for_status()
         return resp.json()
 
+    def get_comments(self, key: str, max_comments: int = 100) -> list[JiraComment]:
+        """Fetch all comments for an issue via GET /rest/api/3/issue/{key}/comment.
+
+        Args:
+            key: Jira issue key.
+            max_comments: Maximum number of comments to return (default 100).
+
+        Returns:
+            List of JiraComment objects ordered oldest-first.
+        """
+        comments: list[JiraComment] = []
+        start_at = 0
+        page_size = min(max_comments, 50)
+
+        while len(comments) < max_comments:
+            resp = self._get(
+                f"/rest/api/3/issue/{key}/comment",
+                params={"startAt": start_at, "maxResults": page_size, "orderBy": "created"},
+            )
+            if resp.status_code == 404:
+                break
+            resp.raise_for_status()
+            data = resp.json()
+            batch = data.get("comments", [])
+            if not batch:
+                break
+            for c in batch:
+                body_raw = c.get("body") or {}
+                if isinstance(body_raw, dict):
+                    body_adf = body_raw
+                    body_plain = self._adf_to_plain(body_raw)
+                else:
+                    body_adf = {}
+                    body_plain = _strip_html(str(body_raw)) if body_raw else ""
+                author_obj = c.get("author") or {}
+                comments.append(JiraComment(
+                    comment_id=c.get("id", ""),
+                    author=author_obj.get("displayName", ""),
+                    author_account_id=author_obj.get("accountId", ""),
+                    body_plain=body_plain,
+                    body_adf=body_adf,
+                    created=c.get("created", ""),
+                    updated=c.get("updated", ""),
+                ))
+            start_at += len(batch)
+            total = data.get("total", 0)
+            if start_at >= total:
+                break
+
+        return comments[:max_comments]
+
+    def get_attachments(self, key: str) -> list[JiraAttachment]:
+        """Return attachment metadata for an issue.
+
+        Attachment metadata is already included in the standard ``get_issue``
+        response when ``attachment`` is in the field list. This method provides
+        a standalone fetch path and parses the same shape.
+
+        Args:
+            key: Jira issue key.
+
+        Returns:
+            List of JiraAttachment objects.
+        """
+        resp = self._get(
+            f"/rest/api/3/issue/{key}",
+            params={"fields": "attachment"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        fields = data.get("fields", {})
+        return self._parse_attachments(fields.get("attachment") or [])
+
+    def get_remotelinks(self, key: str) -> list[JiraRemoteLink]:
+        """Fetch remote (web) links for an issue via GET /rest/api/3/issue/{key}/remotelink.
+
+        Args:
+            key: Jira issue key.
+
+        Returns:
+            List of JiraRemoteLink objects.
+        """
+        resp = self._get(f"/rest/api/3/issue/{key}/remotelink")
+        if resp.status_code == 404:
+            return []
+        resp.raise_for_status()
+        links: list[JiraRemoteLink] = []
+        for rl in resp.json():
+            obj = rl.get("object") or {}
+            url = obj.get("url", "")
+            title = obj.get("title") or obj.get("summary") or url
+            relationship = rl.get("relationship", "")
+            is_conf = "/wiki/" in url
+            page_id = ""
+            if is_conf:
+                import re as _re
+                m = _re.search(r"/pages/(\d+)", url) or _re.search(r"[?&]pageId=(\d+)", url)
+                page_id = m.group(1) if m else ""
+            links.append(JiraRemoteLink(
+                remote_link_id=str(rl.get("id", "")),
+                url=url,
+                title=title,
+                relationship=relationship,
+                is_confluence=is_conf,
+                confluence_page_id=page_id,
+            ))
+        return links
+
+    def get_issue_deep(self, key: str) -> JiraIssue:
+        """Fetch an issue with comments, attachments, and remote links populated.
+
+        Makes 3 additional API calls beyond the standard get_issue:
+          1. GET /rest/api/3/issue/{key}/comment
+          2. Already covered by attachment field in standard fetch
+          3. GET /rest/api/3/issue/{key}/remotelink
+
+        Args:
+            key: Jira issue key.
+
+        Returns:
+            JiraIssue with .comments, .attachments, and .remotelinks populated.
+        """
+        issue = self.get_issue(key)
+
+        # Parse attachments from raw if not already done
+        raw_fields = issue.raw.get("fields", {})
+        issue.attachments = self._parse_attachments(raw_fields.get("attachment") or [])
+
+        # Fetch comments (up to 100)
+        try:
+            issue.comments = self.get_comments(key)
+        except Exception as exc:
+            logger.warning("Could not fetch comments for %s: %s", key, exc)
+
+        # Fetch remote links
+        try:
+            issue.remotelinks = self.get_remotelinks(key)
+        except Exception as exc:
+            logger.warning("Could not fetch remotelinks for %s: %s", key, exc)
+
+        return issue
+
+    @staticmethod
+    def _parse_attachments(attachment_list: list[dict]) -> list[JiraAttachment]:
+        """Parse raw Jira attachment field into typed JiraAttachment objects."""
+        result: list[JiraAttachment] = []
+        for a in attachment_list:
+            author_obj = a.get("author") or {}
+            result.append(JiraAttachment(
+                attachment_id=a.get("id", ""),
+                file_name=a.get("filename", ""),
+                mime_type=a.get("mimeType", ""),
+                size_bytes=int(a.get("size", 0) or 0),
+                author=author_obj.get("displayName", ""),
+                created=a.get("created", ""),
+                content_url=a.get("content", ""),
+                thumbnail_url=a.get("thumbnail", ""),
+            ))
+        return result
+
     # ------------------------------------------------------------------
     # Pagination helpers
     # ------------------------------------------------------------------
@@ -222,6 +382,7 @@ class JiraClient:
             "labels", "components", "priority", "assignee", "reporter",
             "created", "updated", "resolution", "fixVersions",
             "parent", "issuelinks", "resolutiondate", "duedate",
+            "subtasks", "attachment",
         ]
         for cf_id in self._custom_field_map.values():
             if cf_id and cf_id not in base:
@@ -322,9 +483,14 @@ class JiraClient:
         if isinstance(desc_raw, dict):
             desc_html = json.dumps(desc_raw)
             desc_plain = self._adf_to_plain(desc_raw)
+            desc_adf: dict = desc_raw
         else:
             desc_html = str(desc_raw)
             desc_plain = _strip_html(str(desc_raw)) if desc_raw else ""
+            desc_adf = {}
+
+        # Subtasks from fields (populated when "subtasks" is in field list)
+        subtasks_raw: list[dict] = list(fields.get("subtasks") or [])
 
         status_obj = fields.get("status") or {}
         type_obj = fields.get("issuetype") or {}
@@ -386,6 +552,7 @@ class JiraClient:
             project_key=project_obj.get("key", ""),
             description_html=desc_html,
             description_plain=desc_plain,
+            description_adf=desc_adf,
             labels=fields.get("labels", []),
             components=[c.get("name", "") for c in (fields.get("components") or [])],
             priority=priority_obj.get("name", ""),
@@ -407,6 +574,7 @@ class JiraClient:
             epic_link=epic_link,
             linked_issues=linked_issues,
             custom_fields=custom_fields,
+            subtasks_raw=subtasks_raw,
         )
 
     @staticmethod
